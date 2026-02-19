@@ -5,63 +5,60 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-// Cấu hình multer để lưu file tạm vào thư mục 'uploads'
 const upload = multer({ dest: 'uploads/' });
 
-// Phục vụ giao diện web tĩnh
 app.use(express.static('public'));
 
-app.post('/api/extract', upload.array('pdfFiles'), async (req, res) => {
-  const files = req.files;
-  const results = [];
+// Cấu hình ghi log
+const logFile = path.join(__dirname, 'system_log.txt');
 
-  if (!files || files.length === 0) {
-    return res.status(400).json({ error: 'Không có file nào được tải lên.' });
-  }
+function writeLog(message) {
+    const time = new Date().toLocaleString('vi-VN');
+    const logLine = `[${time}] ${message}\n`;
+    fs.appendFileSync(logFile, logLine, 'utf8');
+    console.log(logLine.trim());
+}
 
-  console.log(`Bắt đầu xử lý ${files.length} file PDF...`);
+// API: Xử lý giải nén từng file
+app.post('/api/extract-single', upload.single('pdfFile'), async (req, res) => {
+    const file = req.file;
 
-  // Dùng vòng lặp for...of để xử lý TUẦN TỰ (lần lượt từng file)
-  for (const file of files) {
-    // Tạo tên thư mục đầu ra dựa trên tên file PDF gốc
-    const originalName = file.originalname.replace('.pdf', '');
+    if (!file) {
+        return res.status(400).json({ error: 'Thiếu file PDF' });
+    }
+
+    // Tạo thư mục đầu ra dựa trên tên file gốc (Bỏ đuôi .pdf)
+    const originalName = file.originalname.replace(/\.[^/.]+$/, "");
     const outputDir = path.join(__dirname, 'output_images', originalName);
 
-    // Tạo thư mục nếu chưa có
     if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+        fs.mkdirSync(outputDir, { recursive: true });
     }
 
     try {
-      console.log(`Đang xử lý file: ${file.originalname}...`);
-      // Trích xuất ảnh
-      const images = await exportImages(file.path, outputDir);
-      results.push({
-        filename: file.originalname,
-        status: 'Thành công',
-        imageCount: images.length
-      });
-    } catch (error) {
-      console.error(`Lỗi ở file ${file.originalname}:`, error);
-      results.push({
-        filename: file.originalname,
-        status: 'Lỗi',
-        errorMsg: error.message
-      });
-    } finally {
-      // Dọn dẹp: Xóa file PDF tạm sau khi xử lý xong
-      if (fs.existsSync(file.path)) {
-        fs.unlinkSync(file.path);
-      }
-    }
-  }
+        const images = await exportImages(file.path, outputDir);
+        
+        // Dọn dẹp file tạm
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
 
-  console.log('Đã xử lý xong tất cả các file!');
-  // Trả kết quả về cho giao diện
-  res.json({ results });
+        // Ghi log thành công
+        writeLog(`THÀNH CÔNG | File: "${file.originalname}" | Trích xuất: ${images.length} ảnh | Lưu tại: ${outputDir}`);
+
+        res.json({
+            status: 'success',
+            filename: file.originalname,
+            imageCount: images.length
+        });
+    } catch (error) {
+        // Dọn dẹp file tạm khi lỗi
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        
+        writeLog(`LỖI | File: "${file.originalname}" | Chi tiết: ${error.message}`);
+        res.status(500).json({ status: 'error', filename: file.originalname, msg: error.message });
+    }
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Server đang chạy tại http://localhost:${PORT}`);
+app.listen(3000, () => {
+    console.log('Server chạy tại http://localhost:3000');
+    writeLog('HỆ THỐNG | Server khởi động');
 });

@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "archiver": "^7.0.1",
     "express": "^5.2.1",
     "multer": "^2.0.2",
     "pdf-export-images": "^1.2.0"

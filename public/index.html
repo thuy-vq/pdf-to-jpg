@@ -3,87 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trích xuất ảnh từ PDF</title>
+    <title>Tool Tách Ảnh PDF</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; line-height: 1.6; }
-        .container { border: 1px solid #ccc; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        input[type="file"] { margin: 15px 0; }
-        button { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
-        #status { margin-top: 20px; font-weight: bold; color: #d9534f; }
-        #result { margin-top: 15px; }
-        .success { color: green; }
-        .error { color: red; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 700px; margin: 40px auto; background: #f4f4f9; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        h2 { text-align: center; color: #444; }
+        
+        .upload-area { border: 2px dashed #007bff; padding: 30px; text-align: center; border-radius: 8px; margin-bottom: 20px; background: #f9fbff; cursor: pointer; transition: 0.3s; }
+        .upload-area:hover { background: #eef5ff; border-color: #0056b3; }
+        
+        button { padding: 12px 25px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; transition: 0.2s; width: 100%;}
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-primary:hover { background-color: #0056b3; }
+        .btn-primary:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        /* Thanh tiến độ */
+        .progress-container { margin: 20px 0; display: none; }
+        .progress-bar-bg { width: 100%; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; height: 20px; }
+        .progress-bar-fill { height: 100%; background-color: #007bff; width: 0%; transition: width 0.3s ease; text-align: center; line-height: 20px; color: white; font-size: 12px; }
+
+        /* Danh sách file */
+        .file-list { list-style: none; padding: 0; margin-top: 20px; }
+        .file-item { background: #fff; border-bottom: 1px solid #eee; padding: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .status { font-weight: bold; font-size: 0.9em; }
+        .status.pending { color: #888; }
+        .status.processing { color: #e67e22; }
+        .status.done { color: #28a745; }
+        .status.error { color: #dc3545; }
+
+        .hidden-input { display: none; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Trích xuất ảnh từ nhiều file PDF</h2>
-    <p>Chọn các file PDF bạn muốn xử lý (ảnh sẽ được lưu theo thư mục tên file):</p>
+    <h2>📂 PDF Image Extractor</h2>
     
-    <input type="file" id="pdfInput" multiple accept=".pdf">
-    <br>
-    <button id="uploadBtn">Bắt đầu giải nén</button>
+    <div class="upload-area" onclick="document.getElementById('pdfInput').click()">
+        <p>Click để chọn file hoặc kéo thả PDF vào đây</p>
+        <input type="file" id="pdfInput" class="hidden-input" multiple accept=".pdf">
+    </div>
 
-    <div id="status"></div>
-    <div id="result"></div>
+    <div id="fileListContainer" class="file-list"></div>
+
+    <div class="progress-container" id="progressContainer">
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progressBar">0%</div>
+        </div>
+        <p style="text-align: center; margin-top: 5px; font-size: 0.9em;" id="progressText">Đang chờ...</p>
+    </div>
+
+    <button id="startBtn" class="btn-primary" style="display: none;">Bắt đầu giải nén</button>
 </div>
 
 <script>
-    const uploadBtn = document.getElementById('uploadBtn');
     const pdfInput = document.getElementById('pdfInput');
-    const statusDiv = document.getElementById('status');
-    const resultDiv = document.getElementById('result');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const startBtn = document.getElementById('startBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
 
-    uploadBtn.addEventListener('click', async () => {
-        const files = pdfInput.files;
-        if (files.length === 0) {
-            alert('Vui lòng chọn ít nhất 1 file PDF!');
-            return;
-        }
+    let selectedFiles = [];
 
-        // Khóa nút bấm và hiển thị trạng thái
-        uploadBtn.disabled = true;
-        statusDiv.textContent = `Đang tải lên và xử lý tuần tự ${files.length} file... Vui lòng chờ!`;
-        resultDiv.innerHTML = '';
+    pdfInput.addEventListener('change', () => {
+        selectedFiles = Array.from(pdfInput.files);
+        renderFileList();
+        if (selectedFiles.length > 0) startBtn.style.display = 'block';
+    });
 
-        const formData = new FormData();
-        for (let i = 0; i < files.length; i++) {
-            formData.append('pdfFiles', files[i]);
-        }
+    function renderFileList() {
+        fileListContainer.innerHTML = '';
+        selectedFiles.forEach((file, index) => {
+            const li = document.createElement('li');
+            li.className = 'file-item';
+            li.innerHTML = `
+                <span>📄 ${file.name}</span>
+                <span id="status-${index}" class="status pending">Chờ xử lý</span>
+            `;
+            fileListContainer.appendChild(li);
+        });
+    }
 
-        try {
-            const response = await fetch('/api/extract', {
-                method: 'POST',
-                body: formData
-            });
-
-            const data = await response.json();
+    startBtn.addEventListener('click', async () => {
+        startBtn.disabled = true;
+        progressContainer.style.display = 'block';
+        
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+            const statusElem = document.getElementById(`status-${i}`);
             
-            statusDiv.textContent = 'Hoàn tất!';
-            statusDiv.style.color = 'green';
+            statusElem.textContent = '⏳ Đang xử lý...';
+            statusElem.className = 'status processing';
+            progressText.textContent = `Đang xử lý ${i + 1}/${selectedFiles.length}: ${file.name}`;
+            
+            const formData = new FormData();
+            formData.append('pdfFile', file);
 
-            // Hiển thị kết quả từng file
-            let html = '<ul>';
-            data.results.forEach(item => {
-                if (item.status === 'Thành công') {
-                    html += `<li class="success"><strong>${item.filename}:</strong> Trích xuất được ${item.imageCount} ảnh.</li>`;
+            try {
+                const response = await fetch('/api/extract-single', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    statusElem.textContent = `✅ Xong (${result.imageCount} ảnh)`;
+                    statusElem.className = 'status done';
                 } else {
-                    html += `<li class="error"><strong>${item.filename}:</strong> Lỗi - ${item.errorMsg}</li>`;
+                    statusElem.textContent = `❌ Lỗi: ${result.msg}`;
+                    statusElem.className = 'status error';
                 }
-            });
-            html += '</ul>';
-            resultDiv.innerHTML = html;
+            } catch (err) {
+                statusElem.textContent = '❌ Lỗi mạng';
+                statusElem.className = 'status error';
+            }
 
-        } catch (error) {
-            statusDiv.textContent = 'Đã xảy ra lỗi trong quá trình kết nối tới server.';
-            statusDiv.style.color = 'red';
-            console.error(error);
-        } finally {
-            uploadBtn.disabled = false;
+            const percent = Math.round(((i + 1) / selectedFiles.length) * 100);
+            progressBar.style.width = `${percent}%`;
+            progressBar.textContent = `${percent}%`;
         }
+
+        progressText.textContent = 'Hoàn tất quá trình!';
+        startBtn.style.display = 'none'; // Ẩn nút đi khi xong
     });
 </script>
 
